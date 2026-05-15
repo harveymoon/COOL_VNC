@@ -19,6 +19,7 @@ import { showScanModal } from "./scan-modal.js";
 import { pickScreenRegion } from "./screen-picker.js";
 import { getSocketStats, getCanvasPaints } from "./stats.js";
 import { showGridView } from "./grid-view.js";
+import { showInputDialog } from "./prompt-dialog.js";
 
 const sidebarEl = document.getElementById("sidebar")!;
 const stageEl = document.getElementById("stage")!;
@@ -488,11 +489,15 @@ const sidebar = new Sidebar(
       });
     },
     onAddGroup: async () => {
-      const name = prompt("Group name:");
-      if (!name || !name.trim()) return;
+      const name = await showInputDialog({
+        title: "New group",
+        placeholder: "Group name",
+        okLabel: "Create",
+      });
+      if (!name) return;
       const newGroup: ServerGroup = {
         id: crypto.randomUUID(),
-        name: name.trim(),
+        name,
         expanded: true,
       };
       groups = [...groups, newGroup];
@@ -500,9 +505,13 @@ const sidebar = new Sidebar(
       sidebar.setGroups(groups);
     },
     onRenameGroup: async (group) => {
-      const name = prompt("Rename group:", group.name);
-      if (!name || !name.trim() || name.trim() === group.name) return;
-      groups = groups.map((g) => (g.id === group.id ? { ...g, name: name.trim() } : g));
+      const name = await showInputDialog({
+        title: "Rename group",
+        defaultValue: group.name,
+        okLabel: "Rename",
+      });
+      if (!name || name === group.name) return;
+      groups = groups.map((g) => (g.id === group.id ? { ...g, name } : g));
       await saveGroups(groups);
       sidebar.setGroups(groups);
     },

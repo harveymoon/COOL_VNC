@@ -1,4 +1,5 @@
 import type { ScreenRegion } from "./storage.js";
+import { showInputDialog } from "./prompt-dialog.js";
 
 const SNAP_THRESHOLD = 0.1; // 10% of canvas dimension
 
@@ -127,20 +128,24 @@ export function pickScreenRegion(
       const fbH = Math.max(1, Math.min(canvas.height - fbY, Math.round(h * scale)));
 
       pending = true;
-      const name = window.prompt("Name this region:", defaultName);
-      pending = false;
-      if (!name) {
-        marquee.style.display = "none";
-        return;
-      }
-
-      cleanup({
-        id: crypto.randomUUID(),
-        name: name.trim() || defaultName,
-        x: fbX,
-        y: fbY,
-        width: fbW,
-        height: fbH,
+      showInputDialog({
+        title: "Name this region",
+        defaultValue: defaultName,
+        okLabel: "Save",
+      }).then((name) => {
+        pending = false;
+        if (!name) {
+          marquee.style.display = "none";
+          return;
+        }
+        cleanup({
+          id: crypto.randomUUID(),
+          name,
+          x: fbX,
+          y: fbY,
+          width: fbW,
+          height: fbH,
+        });
       });
     };
 

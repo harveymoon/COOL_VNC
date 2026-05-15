@@ -1,0 +1,16 @@
+node_modules
+dist
+.vite
+*.log
+.DS_Store
+
+# Build output (large binaries, not for version control — published as Releases)
+release/
+
+# Local user data (contains saved server passwords)
+data/
+
+# Editor / OS noise
+.idea/
+.vscode/
+*.swp

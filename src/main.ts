@@ -310,7 +310,7 @@ pickRegionBtn.addEventListener("click", async () => {
   sessions.setRegion(server.id, null);
   await new Promise((r) => requestAnimationFrame(() => r(null)));
   const defaultName = `Screen ${(server.screens?.length ?? 0) + 1}`;
-  const region = await pickScreenRegion(container, canvas, defaultName);
+  const region = await pickScreenRegion(container, canvas, sidebarEl, defaultName);
   if (!region) {
     applyActiveRegion(server);
     return;

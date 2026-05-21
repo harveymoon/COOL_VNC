@@ -27,6 +27,7 @@ interface Session {
   region?: ScreenRegion;
   resizeObserver?: ResizeObserver;
   thumbnailTimer?: number;
+  origUpdateScale?: () => void;
 }
 
 type StatusListener = (id: string, status: SessionStatus, detail?: StatusDetail) => void;
@@ -114,6 +115,13 @@ export class SessionManager {
     }
     const canvas = session.container.querySelector("canvas") as HTMLCanvasElement | null;
     if (!canvas || !session.rfb) return;
+    const display = session.rfb._display;
+
+    // Restore noVNC's resize handler if it was patched for a previous region.
+    if (session.origUpdateScale && session.rfb._updateScale !== session.origUpdateScale) {
+      session.rfb._updateScale = session.origUpdateScale;
+    }
+    session.origUpdateScale = undefined;
 
     if (!session.region) {
       session.rfb.scaleViewport = true;
@@ -126,6 +134,17 @@ export class SessionManager {
     }
 
     session.rfb.scaleViewport = false;
+
+    // noVNC translates click coords via display.absX(x) = x / display._scale + viewportLoc.x.
+    // We render the cropped region by CSS-transforming the canvas, but display._scale stays
+    // at 1, so clicks land on the wrong framebuffer pixel. Patch _updateScale so noVNC's
+    // resize handler stops resetting _scale, then set _scale ourselves on every apply().
+    if (display) {
+      session.origUpdateScale = session.rfb._updateScale;
+      session.rfb._updateScale = () => {
+        // No-op while a region is active.
+      };
+    }
 
     const apply = () => {
       const r = session.region;
@@ -141,6 +160,8 @@ export class SessionManager {
       canvas.style.left = "0";
       canvas.style.transformOrigin = "0 0";
       canvas.style.transform = `translate(${offsetX - r.x * scale}px, ${offsetY - r.y * scale}px) scale(${scale})`;
+      // Direct field write — avoids _rescale's side effect of rewriting canvas.style.width/height.
+      if (display) display._scale = scale;
     };
     apply();
 
@@ -201,6 +222,9 @@ export class SessionManager {
     this.captureFinalThumbnail(session);
     this.stopThumbnailCapture(session);
     session.resizeObserver?.disconnect();
+    if (session.origUpdateScale && session.rfb) {
+      session.rfb._updateScale = session.origUpdateScale;
+    }
     try {
       session.rfb?.disconnect();
     } catch {

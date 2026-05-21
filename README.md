@@ -8,9 +8,17 @@ Built on [noVNC](https://github.com/novnc/noVNC). Adds a sidebar of saved server
 
 ## Download
 
-Grab the latest portable build from the [Releases page](https://github.com/harveymoon/COOL_VNC/releases). Unzip and run `cool-vnc.exe` — no install, no Node, no Python.
+Grab the latest portable build from the [Releases page](https://github.com/harveymoon/COOL_VNC/releases). No install, no Node, no Python.
 
-Your saved servers, groups, and thumbnails live in `%APPDATA%\cool-vnc\data\` on Windows.
+| Platform | File |
+|---|---|
+| Windows x64 | `cool-vnc-win32-x64.zip` → unzip, run `cool-vnc.exe` |
+| macOS Intel | `cool-vnc-darwin-x64.zip` → unzip, run `cool-vnc.app` |
+| macOS Apple Silicon | `cool-vnc-darwin-arm64.zip` → unzip, run `cool-vnc.app` |
+
+Mac builds are not code-signed — first launch needs **right-click → Open** to bypass Gatekeeper.
+
+Your saved servers, groups, and thumbnails live in `%APPDATA%\cool-vnc\data\` (Windows) or `~/Library/Application Support/cool-vnc/data/` (macOS).
 
 ---
 
@@ -111,13 +119,23 @@ DEFAULT_VNC_PASSWORD="hunter2" npm run dev
 
 ## Build a redistributable
 
+**Recommended: push a tag, let CI build for all platforms.**
+
 ```bash
+npm version patch         # bumps package.json + creates a git tag
+git push && git push --tags
+```
+
+`.github/workflows/release.yml` builds Windows x64 + macOS Intel + macOS Apple Silicon in parallel and publishes them to a GitHub Release.
+
+**Local Windows build (no Mac):**
+
+```bash
+npm run icon               # regenerate build/icon.ico from public/favicon.svg
 npm run pack:portable      # creates release/cool-vnc-win32-x64/
 ```
 
-The output folder contains `cool-vnc.exe` plus Electron's runtime — about 350 MB unpacked, ~140 MB zipped. Send the zip to a friend; they extract and double-click.
-
-For a one-click NSIS installer instead, run `npm run pack:win`. On Windows this requires **Developer Mode enabled** (Settings → For developers) or an admin shell, because `electron-builder` extracts a macOS code-signing toolset whose `.dylib` symlinks fail under standard user privileges.
+About 350 MB unpacked, ~140 MB zipped.
 
 ---
 
@@ -142,7 +160,6 @@ In packaged builds, `data/` lives at `%APPDATA%\cool-vnc\data\` (Windows), `~/Li
 | UI | Vanilla TypeScript, [noVNC 1.7](https://github.com/novnc/noVNC), Vite 5 |
 | Backend | Node `http` + `ws`, [`des.js`](https://github.com/indutny/des.js) for VNC auth, ESM only |
 | Shell | Electron 42, [`@electron/packager`](https://github.com/electron/packager) for the portable build |
-| Optional | `electron-builder` for NSIS installer |
 
 No React, no framework, no state library — small enough to read end-to-end.
 

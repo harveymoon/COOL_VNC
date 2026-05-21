@@ -35,6 +35,8 @@ async function startProxy() {
 }
 
 function createWindow() {
+  // In dev the icon sits in the repo; in the packaged app it's bundled in the asar.
+  const iconPath = path.join(__dirname, "..", "build", "icon.ico");
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -42,6 +44,7 @@ function createWindow() {
     minHeight: 480,
     backgroundColor: "#0d0f12",
     title: "cool-vnc",
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,

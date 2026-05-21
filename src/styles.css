@@ -983,8 +983,90 @@ body.dragging-server .ungrouped-zone > .ungrouped-hint {
   position: absolute;
   border: 1.5px solid var(--accent);
   background: rgba(110, 168, 254, 0.18);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: move;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+}
+
+.screen-picker-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border: 1.5px solid var(--bg);
+  border-radius: 2px;
+  pointer-events: auto;
+  box-sizing: border-box;
+}
+
+.screen-picker-handle-nw { left: -6px;  top: -6px;    cursor: nwse-resize; }
+.screen-picker-handle-ne { right: -6px; top: -6px;    cursor: nesw-resize; }
+.screen-picker-handle-sw { left: -6px;  bottom: -6px; cursor: nesw-resize; }
+.screen-picker-handle-se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+.screen-picker-handle-n  { left: 50%;   top: -6px;    transform: translateX(-50%); cursor: ns-resize; }
+.screen-picker-handle-s  { left: 50%;   bottom: -6px; transform: translateX(-50%); cursor: ns-resize; }
+.screen-picker-handle-w  { left: -6px;  top: 50%;     transform: translateY(-50%); cursor: ew-resize; }
+.screen-picker-handle-e  { right: -6px; top: 50%;     transform: translateY(-50%); cursor: ew-resize; }
+
+.screen-picker-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.screen-picker-panel header h2 {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.screen-picker-panel header p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+
+.screen-picker-name-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.screen-picker-name-field input {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.screen-picker-name-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.screen-picker-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.screen-picker-actions .btn {
+  flex: 1;
+}
+
+.screen-picker-actions .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .error-overlay {

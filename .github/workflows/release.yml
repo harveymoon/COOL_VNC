@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }}-${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+          - os: macos-13
+            platform: darwin
+            arch: x64
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Build app (tsc + vite)
+        run: npm run build
+
+      # Mac runners regenerate icons (need cairo for cairosvg) and convert to icns.
+      # Windows runner uses the committed build/icon.ico.
+      - name: Set up Python (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install icon deps (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cairo pango libffi
+          pip install cairosvg pillow
+
+      - name: Regenerate icons + build .icns (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          python build/make-icon.py
+          iconutil -c icns build/icon.iconset -o build/icon.icns
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: npx electron-packager . cool-vnc --platform=win32 --arch=${{ matrix.arch }} --out=release --overwrite --asar --prune=true --icon=build/icon.ico --ignore="^/(release|data|\.git|\.github|src|build/icon\.iconset|electron/.+\.map)"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: npx electron-packager . cool-vnc --platform=darwin --arch=${{ matrix.arch }} --out=release --overwrite --asar --prune=true --icon=build/icon.icns --ignore="^/(release|data|\.git|\.github|src|build/icon\.iconset|electron/.+\.map)"
+
+      - name: Zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path release/cool-vnc-win32-${{ matrix.arch }} -DestinationPath release/cool-vnc-win32-${{ matrix.arch }}.zip
+
+      - name: Zip (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent release/cool-vnc-darwin-${{ matrix.arch }}/cool-vnc.app release/cool-vnc-darwin-${{ matrix.arch }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cool-vnc-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release/cool-vnc-${{ matrix.platform }}-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false

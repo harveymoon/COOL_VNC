@@ -13,7 +13,6 @@ Grab the latest portable build from the [Releases page](https://github.com/harve
 | Platform | File |
 |---|---|
 | Windows x64 | `cool-vnc-win32-x64.zip` → unzip, run `cool-vnc.exe` |
-| macOS Intel | `cool-vnc-darwin-x64.zip` → unzip, run `cool-vnc.app` |
 | macOS Apple Silicon | `cool-vnc-darwin-arm64.zip` → unzip, run `cool-vnc.app` |
 
 Mac builds are not code-signed — first launch needs **right-click → Open** to bypass Gatekeeper.

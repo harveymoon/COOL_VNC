@@ -54,19 +54,27 @@ jobs:
           brew install cairo pango libffi
           pip install cairosvg pillow
 
+      # Homebrew installs libcairo to /opt/homebrew/lib (arm64) or /usr/local/lib
+      # (Intel). The Python from actions/setup-python doesn't search those by
+      # default, so cairocffi's ctypes.dlopen("libcairo.2.dylib") fails. Point
+      # DYLD_FALLBACK_LIBRARY_PATH at the right one via `brew --prefix`.
       - name: Regenerate icons + build .icns (macOS)
         if: runner.os == 'macOS'
         run: |
+          export DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-/usr/local/lib:/usr/lib}"
           python build/make-icon.py
           iconutil -c icns build/icon.iconset -o build/icon.icns
 
+      # Force bash on Windows too — PowerShell parses the `|` inside the
+      # --ignore regex as a shell pipe and tries to run "data" as a command.
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        run: npx electron-packager . cool-vnc --platform=win32 --arch=${{ matrix.arch }} --out=release --overwrite --asar --prune=true --icon=build/icon.ico --ignore="^/(release|data|\.git|\.github|src|build/icon\.iconset|electron/.+\.map)"
+        shell: bash
+        run: npx electron-packager . cool-vnc --platform=win32 --arch=${{ matrix.arch }} --out=release --overwrite --asar --prune=true --icon=build/icon.ico --ignore='^/(release|data|\.git|\.github|src|build/icon\.iconset|electron/.+\.map)'
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
-        run: npx electron-packager . cool-vnc --platform=darwin --arch=${{ matrix.arch }} --out=release --overwrite --asar --prune=true --icon=build/icon.icns --ignore="^/(release|data|\.git|\.github|src|build/icon\.iconset|electron/.+\.map)"
+        run: npx electron-packager . cool-vnc --platform=darwin --arch=${{ matrix.arch }} --out=release --overwrite --asar --prune=true --icon=build/icon.icns --ignore='^/(release|data|\.git|\.github|src|build/icon\.iconset|electron/.+\.map)'
 
       - name: Zip (Windows)
         if: runner.os == 'Windows'

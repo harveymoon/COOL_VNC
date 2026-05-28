@@ -103,6 +103,97 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // ── Remote-control API ───────────────────────────────────────────────
+    // The renderer pushes its runtime state (which sessions are active /
+    // focused / which region is showing) over the control WebSocket below.
+    // These endpoints expose that to outside callers and route commands
+    // back to the renderer.
+
+    if (req.method === "GET" && req.url === "/api/sessions") {
+      const servers = await readServers();
+      const slim = servers.map((s) => ({
+        id: s.id,
+        name: s.name,
+        host: s.host,
+        port: s.port,
+        groupId: s.groupId,
+        screens: (s.screens ?? []).map((r) => ({ id: r.id, name: r.name })),
+        thumbnail: `/api/thumbnails/${s.id}`,
+      }));
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          servers: slim,
+          active: [...controlState.active],
+          current: controlState.current,
+          activeRegions: controlState.activeRegions,
+          controlConnected: controlSocket !== null,
+        }),
+      );
+      return;
+    }
+
+    {
+      const sessionAction = req.url.match(
+        /^\/api\/sessions\/([^/]+)\/(connect|disconnect|focus|screen)$/,
+      );
+      if (sessionAction && req.method === "POST") {
+        const serverId = decodeURIComponent(sessionAction[1]);
+        const action = sessionAction[2];
+        let payload = {};
+        if (action === "screen") {
+          const body = await readBody(req);
+          try {
+            payload = body ? JSON.parse(body) : {};
+          } catch {
+            res.writeHead(400);
+            res.end("invalid JSON");
+            return;
+          }
+        }
+        if (!controlSocket) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "cool-vnc UI is not running" }));
+          return;
+        }
+        const msg = { type: action, serverId, ...payload };
+        try {
+          controlSocket.send(JSON.stringify(msg));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: String(err) }));
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, sent: msg }));
+        return;
+      }
+    }
+
+    if (req.method === "POST" && req.url === "/api/test-auth") {
+      const body = await readBody(req);
+      let data;
+      try {
+        data = JSON.parse(body);
+      } catch {
+        res.writeHead(400);
+        res.end("invalid JSON");
+        return;
+      }
+      const host = String(data.host ?? "");
+      const port = Number(data.port ?? 0);
+      const password = String(data.password ?? "");
+      if (!host || !port) {
+        res.writeHead(400);
+        res.end("host and port required");
+        return;
+      }
+      const result = await tryVncAuth(host, port, password);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result));
+      return;
+    }
+
     if (req.method === "GET" && req.url.startsWith("/api/ping?")) {
       const u = new URL(req.url, "http://localhost");
       const host = u.searchParams.get("host") ?? "";
@@ -268,8 +359,59 @@ server.on("upgrade", (req, sock, head) => {
   wss.handleUpgrade(req, sock, head, (ws) => wss.emit("connection", ws, req));
 });
 
+// ── Control channel state ──────────────────────────────────────────────────
+// The renderer connects one socket and pushes runtime state. Only one client
+// is honoured at a time; a second connection wins and the first is closed.
+let controlSocket = null;
+const controlState = {
+  active: [],            // server IDs with a live session
+  current: null,         // server ID currently focused in the UI
+  activeRegions: {},     // serverId → activeRegionId
+};
+
+function handleControlConnection(ws) {
+  if (controlSocket && controlSocket !== ws) {
+    try {
+      controlSocket.close(1000, "superseded");
+    } catch {
+      // ignore
+    }
+  }
+  controlSocket = ws;
+  console.log("[control] renderer attached");
+
+  ws.on("message", (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw.toString("utf8"));
+    } catch {
+      return;
+    }
+    if (msg && msg.type === "state") {
+      if (Array.isArray(msg.active)) controlState.active = msg.active.filter((x) => typeof x === "string");
+      if (typeof msg.current === "string" || msg.current === null) controlState.current = msg.current;
+      if (msg.activeRegions && typeof msg.activeRegions === "object") {
+        controlState.activeRegions = { ...msg.activeRegions };
+      }
+    }
+  });
+
+  ws.on("close", () => {
+    if (controlSocket === ws) {
+      controlSocket = null;
+      console.log("[control] renderer detached");
+    }
+  });
+}
+
 wss.on("connection", (ws, req) => {
   const url = req.url ?? "/";
+
+  if (url === "/api/control" || url.startsWith("/api/control?")) {
+    handleControlConnection(ws);
+    return;
+  }
+
   const match = url.match(/^\/([^/]+)\/(\d+)\/?$/);
   if (!match) {
     console.warn(`[proxy] rejecting bad path: ${url}`);

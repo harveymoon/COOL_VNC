@@ -35,7 +35,7 @@ export interface ScanResult {
   error: string | null;
 }
 
-export type SortMode = "name" | "recent" | "frequent";
+export type SortMode = "manual" | "name" | "recent" | "frequent";
 
 export interface UiPrefs {
   sort: SortMode;
@@ -43,6 +43,7 @@ export interface UiPrefs {
   quality: number;
   compression: number;
   showStats: boolean;
+  remoteApiEnabled: boolean;
 }
 
 const PREFS_KEY = "cool-vnc.prefs";
@@ -103,12 +104,27 @@ export async function scanNetwork(): Promise<{ results: ScanResult[]; defaultPas
   return await res.json();
 }
 
+export async function testVncAuth(
+  host: string,
+  port: number,
+  password: string,
+): Promise<{ authOk: boolean; requiresAuth: boolean; error: string | null }> {
+  const res = await fetch("/api/test-auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ host, port, password }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
+}
+
 const DEFAULT_PREFS: UiPrefs = {
   sort: "name",
   collapsed: false,
   quality: 6,
   compression: 2,
   showStats: false,
+  remoteApiEnabled: true,
 };
 
 export function loadPrefs(): UiPrefs {

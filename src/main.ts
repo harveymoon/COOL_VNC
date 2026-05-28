@@ -20,6 +20,8 @@ import { pickScreenRegion } from "./screen-picker.js";
 import { getSocketStats, getCanvasPaints } from "./stats.js";
 import { showGridView } from "./grid-view.js";
 import { showInputDialog } from "./prompt-dialog.js";
+import { ControlClient } from "./control-client.js";
+import { checkForUpdate, dismissUpdate } from "./updater.js";
 
 const sidebarEl = document.getElementById("sidebar")!;
 const stageEl = document.getElementById("stage")!;
@@ -129,6 +131,10 @@ settingsPanel.innerHTML = `
       <input type="checkbox" data-show-stats />
       <span>Show stats overlay</span>
     </label>
+    <label class="settings-toggle">
+      <input type="checkbox" data-remote-api />
+      <span>Expose remote-control API</span>
+    </label>
   </div>
 `;
 stageEl.appendChild(settingsPanel);
@@ -145,6 +151,8 @@ const screenDeleteBtn = settingsPanel.querySelector("[data-screen-delete]") as H
 const pickRegionBtn = settingsPanel.querySelector("[data-pick-region]") as HTMLButtonElement;
 const showStatsToggle = settingsPanel.querySelector("[data-show-stats]") as HTMLInputElement;
 showStatsToggle.checked = prefs.showStats;
+const remoteApiToggle = settingsPanel.querySelector("[data-remote-api]") as HTMLInputElement;
+remoteApiToggle.checked = prefs.remoteApiEnabled;
 
 const statsWidget = document.createElement("div");
 statsWidget.className = "stats-widget";
@@ -330,7 +338,11 @@ pickRegionBtn.addEventListener("click", async () => {
 const selectedServer = (): SavedServer | undefined =>
   selectedId ? servers.find((s) => s.id === selectedId) : undefined;
 
+// Re-assigned once the ControlClient is constructed below.
+let pushControl: () => void = () => {};
+
 const refreshMainArea = () => {
+  pushControl();
   const server = selectedServer();
 
   if (!server) {
@@ -392,18 +404,47 @@ errorOverlay.querySelector("[data-retry]")!.addEventListener("click", () => {
   sessions.open(server);
 });
 
-sessions.onStatusChange((id) => {
-  if (id === selectedId) refreshMainArea();
-});
+// Auth-failure recovery: when a connect attempt fails on credentials, pop a
+// password prompt. We don't persist the typed password until the next
+// connection actually succeeds — saving on failure would overwrite the saved
+// password with a known-bad value.
+const authPromptOpen = new Set<string>();
+const pendingPasswords = new Map<string, string>();
 
-// ── Server stats ───────────────────────────────────────────────────────────
+sessions.onStatusChange(async (id, status, detail) => {
+  if (id === selectedId) refreshMainArea();
+  if (status !== "error" || detail?.kind !== "auth") return;
+  if (authPromptOpen.has(id)) return;
+
+  const server = servers.find((s) => s.id === id);
+  if (!server) return;
+
+  authPromptOpen.add(id);
+  try {
+    const newPassword = await showInputDialog({
+      title: server.password ? `Wrong password for ${server.name}` : `Password for ${server.name}`,
+      placeholder: "VNC password",
+      okLabel: "Connect",
+      type: "password",
+    });
+    if (newPassword === null) return;
+
+    pendingPasswords.set(id, newPassword);
+    sessions.open({ ...server, password: newPassword });
+  } finally {
+    authPromptOpen.delete(id);
+  }
+});
 
 sessions.onConnected((id) => {
   const idx = servers.findIndex((s) => s.id === id);
   if (idx < 0) return;
   const s = servers[idx];
+  const pending = pendingPasswords.get(id);
+  pendingPasswords.delete(id);
   servers[idx] = {
     ...s,
+    password: pending ?? s.password,
     lastConnectedAt: Date.now(),
     connectCount: (s.connectCount ?? 0) + 1,
   };
@@ -486,6 +527,10 @@ const sidebar = new Sidebar(
         onClose: () => {
           // nothing
         },
+        isActive: (id) => {
+          const s = sessions.getStatus(id);
+          return s === "connected" || s === "connecting";
+        },
       });
     },
     onAddGroup: async () => {
@@ -542,6 +587,29 @@ const sidebar = new Sidebar(
       await saveServers(servers);
       sidebar.setServers(servers);
     },
+    onReorderServer: async (serverId, beforeId, targetGroupId) => {
+      const dragged = servers.find((s) => s.id === serverId);
+      if (!dragged) return;
+      const updated: SavedServer = { ...dragged, groupId: targetGroupId ?? undefined };
+      const rest = servers.filter((s) => s.id !== serverId);
+      const insertAt = beforeId ? rest.findIndex((s) => s.id === beforeId) : -1;
+      if (insertAt < 0) rest.push(updated);
+      else rest.splice(insertAt, 0, updated);
+      servers = rest;
+      await saveServers(servers);
+      sidebar.setServers(servers);
+    },
+    onReorderGroup: async (groupId, beforeGroupId) => {
+      const dragged = groups.find((g) => g.id === groupId);
+      if (!dragged) return;
+      const rest = groups.filter((g) => g.id !== groupId);
+      const insertAt = beforeGroupId ? rest.findIndex((g) => g.id === beforeGroupId) : -1;
+      if (insertAt < 0) rest.push(dragged);
+      else rest.splice(insertAt, 0, dragged);
+      groups = rest;
+      await saveGroups(groups);
+      sidebar.setGroups(groups);
+    },
   },
   { sort: prefs.sort, collapsed: prefs.collapsed },
 );
@@ -549,3 +617,154 @@ const sidebar = new Sidebar(
 sidebar.setGroups(groups);
 
 refreshMainArea();
+
+// ── Remote-control channel (exposes GET /api/sessions + POST commands) ─────
+
+const setActiveRegion = async (serverId: string, regionId: string | null) => {
+  const server = servers.find((s) => s.id === serverId);
+  if (!server) return;
+  const screens = server.screens ?? [];
+  if (regionId !== null && !screens.some((r) => r.id === regionId)) return;
+  servers = servers.map((s) =>
+    s.id === serverId ? { ...s, activeScreenId: regionId ?? undefined } : s,
+  );
+  await saveServers(servers);
+  const updated = servers.find((s) => s.id === serverId)!;
+  if (selectedId === serverId) {
+    renderScreenOptions(updated);
+    applyActiveRegion(updated);
+  } else {
+    // Apply to the live session even if it's not the focused tab.
+    const region = updated.screens?.find((r) => r.id === updated.activeScreenId) ?? null;
+    sessions.setRegion(serverId, region);
+  }
+  control.pushState(buildControlState());
+};
+
+const buildControlState = () => {
+  const active: string[] = [];
+  for (const s of servers) {
+    const st = sessions.getStatus(s.id);
+    if (st === "connected" || st === "connecting") active.push(s.id);
+  }
+  const activeRegions: Record<string, string | null> = {};
+  for (const s of servers) activeRegions[s.id] = s.activeScreenId ?? null;
+  return { active, current: selectedId, activeRegions };
+};
+
+const control = new ControlClient({
+  onConnect: (id) => {
+    const server = servers.find((s) => s.id === id);
+    if (!server) return;
+    selectedId = id;
+    sidebar.setActive(id);
+    sessions.open(server);
+    refreshMainArea();
+  },
+  onDisconnect: (id) => {
+    sessions.close(id);
+    refreshMainArea();
+  },
+  onFocus: (id) => {
+    if (!servers.some((s) => s.id === id)) return;
+    selectedId = id;
+    sidebar.setActive(id);
+    if (sessions.hasSession(id)) sessions.focus(id);
+    refreshMainArea();
+  },
+  onScreen: (id, regionId) => {
+    void setActiveRegion(id, regionId);
+  },
+});
+if (prefs.remoteApiEnabled) control.start();
+
+pushControl = () => control.pushState(buildControlState());
+sessions.onStatusChange(pushControl);
+sessions.onConnected(pushControl);
+pushControl();
+
+remoteApiToggle.addEventListener("change", () => {
+  prefs.remoteApiEnabled = remoteApiToggle.checked;
+  savePrefs(prefs);
+  if (prefs.remoteApiEnabled) control.start();
+  else control.stop();
+});
+
+// vnc:// deep links from the OS protocol handler. Match an existing server
+// by host:port, otherwise create a new entry; either way, connect.
+declare global {
+  interface Window {
+    coolVnc?: { onVncUrl: (cb: (url: string) => void) => void };
+  }
+}
+
+// ── Update check ───────────────────────────────────────────────────────────
+// Fire-and-forget on startup. If GitHub has a newer release, drop a pill into
+// the sidebar header that opens the release page.
+void (async () => {
+  const update = await checkForUpdate();
+  if (!update) return;
+  const header = sidebarEl.querySelector(".sidebar-header");
+  if (!header) return;
+
+  const pill = document.createElement("a");
+  pill.className = "update-pill";
+  pill.href = update.url;
+  pill.target = "_blank";
+  pill.rel = "noreferrer noopener";
+  pill.title = `You're on v${update.current} — click to view the ${update.latest} release on GitHub`;
+  pill.textContent = `${update.latest} ↗`;
+
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "update-pill-dismiss";
+  dismiss.title = "Dismiss";
+  dismiss.textContent = "×";
+  dismiss.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dismissUpdate(update.latest);
+    pill.remove();
+  });
+  pill.appendChild(dismiss);
+  header.appendChild(pill);
+})();
+
+window.coolVnc?.onVncUrl(async (raw) => {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return;
+  }
+  if (parsed.protocol !== "vnc:") return;
+  const host = parsed.hostname;
+  if (!host) return;
+  const port = parsed.port ? Number(parsed.port) : 5900;
+  const password = parsed.password ? decodeURIComponent(parsed.password) : undefined;
+
+  let server = servers.find((s) => s.host === host && s.port === port);
+  if (!server) {
+    server = {
+      id: crypto.randomUUID(),
+      name: `${host}:${port}`,
+      host,
+      port,
+      password,
+    };
+    servers = [...servers, server];
+    await saveServers(servers);
+    sidebar.setServers(servers);
+  } else if (password && server.password !== password) {
+    const updated: SavedServer = { ...server, password };
+    servers = servers.map((s) => (s.id === server!.id ? updated : s));
+    await saveServers(servers);
+    sidebar.setServers(servers);
+    server = updated;
+  }
+
+  selectedId = server.id;
+  sidebar.setActive(server.id);
+  sessions.open(server);
+  refreshMainArea();
+});

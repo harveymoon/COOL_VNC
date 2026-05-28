@@ -16,6 +16,8 @@ interface Handlers {
   onDeleteGroup: (group: ServerGroup) => void;
   onToggleGroup: (group: ServerGroup) => void;
   onMoveServerToGroup: (serverId: string, groupId: string | null) => void;
+  onReorderServer: (serverId: string, beforeId: string | null, targetGroupId: string | null) => void;
+  onReorderGroup: (groupId: string, beforeGroupId: string | null) => void;
 }
 
 interface InitState {
@@ -89,6 +91,7 @@ export class Sidebar {
     this.sortSelect.className = "sort-select";
     this.sortSelect.title = "Sort by";
     const opts: { value: SortMode; label: string }[] = [
+      { value: "manual", label: "Manual" },
       { value: "name", label: "Name" },
       { value: "recent", label: "Recent" },
       { value: "frequent", label: "Frequent" },
@@ -238,6 +241,8 @@ export class Sidebar {
     }
     const list = [...servers];
     switch (this.sort) {
+      case "manual":
+        return list;
       case "name":
         return list.sort((a, b) =>
           a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
@@ -314,7 +319,45 @@ export class Sidebar {
 
     const header = document.createElement("div");
     header.className = "group-header";
-    header.draggable = false;
+    header.draggable = true;
+
+    header.addEventListener("dragstart", (e) => {
+      if (!e.dataTransfer) return;
+      e.dataTransfer.setData("text/plain", `group:${group.id}`);
+      e.dataTransfer.effectAllowed = "move";
+      header.classList.add("dragging");
+    });
+    header.addEventListener("dragend", () => header.classList.remove("dragging"));
+
+    header.addEventListener("dragover", (e) => {
+      const raw = e.dataTransfer?.types.includes("text/plain") ? "drag" : null;
+      if (!raw) return;
+      // Only handle group reorder here; server-onto-header bubbles to the zone
+      // and is handled by attachDropTarget as "move into this group".
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      const r = header.getBoundingClientRect();
+      const before = e.clientY < r.top + r.height / 2;
+      header.classList.toggle("drop-before-group", before);
+      header.classList.toggle("drop-after-group", !before);
+    });
+    header.addEventListener("dragleave", () => {
+      header.classList.remove("drop-before-group", "drop-after-group");
+    });
+    header.addEventListener("drop", (e) => {
+      const raw = e.dataTransfer?.getData("text/plain") ?? "";
+      header.classList.remove("drop-before-group", "drop-after-group");
+      if (!raw.startsWith("group:")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const draggedId = raw.slice("group:".length);
+      if (draggedId === group.id) return;
+      const r = header.getBoundingClientRect();
+      const before = e.clientY < r.top + r.height / 2;
+      const idx = this.groups.findIndex((g) => g.id === group.id);
+      const beforeGroupId = before ? group.id : (this.groups[idx + 1]?.id ?? null);
+      this.handlers.onReorderGroup(draggedId, beforeGroupId);
+    });
 
     const chevron = document.createElement("span");
     chevron.className = "group-chevron";
@@ -388,8 +431,9 @@ export class Sidebar {
     el.addEventListener("drop", (e) => {
       e.preventDefault();
       el.classList.remove("drag-over");
-      const serverId = e.dataTransfer?.getData("text/plain");
-      if (!serverId) return;
+      const raw = e.dataTransfer?.getData("text/plain") ?? "";
+      if (!raw.startsWith("server:")) return; // groups handled by header drop
+      const serverId = raw.slice("server:".length);
       this.handlers.onMoveServerToGroup(serverId, groupId);
     });
   }
@@ -402,7 +446,7 @@ export class Sidebar {
 
     item.addEventListener("dragstart", (e) => {
       if (!e.dataTransfer) return;
-      e.dataTransfer.setData("text/plain", server.id);
+      e.dataTransfer.setData("text/plain", `server:${server.id}`);
       e.dataTransfer.effectAllowed = "move";
       item.classList.add("dragging");
       document.body.classList.add("dragging-server");
@@ -410,6 +454,37 @@ export class Sidebar {
     item.addEventListener("dragend", () => {
       item.classList.remove("dragging");
       document.body.classList.remove("dragging-server");
+    });
+
+    // Reorder targeting — only when sort is "manual" (otherwise the visual
+    // order is computed and a manual drop would just snap back next render).
+    item.addEventListener("dragover", (e) => {
+      if (this.sort !== "manual") return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      const r = item.getBoundingClientRect();
+      const before = e.clientY < r.top + r.height / 2;
+      item.classList.toggle("drop-before", before);
+      item.classList.toggle("drop-after", !before);
+    });
+    item.addEventListener("dragleave", () => {
+      item.classList.remove("drop-before", "drop-after");
+    });
+    item.addEventListener("drop", (e) => {
+      if (this.sort !== "manual") return;
+      const raw = e.dataTransfer?.getData("text/plain") ?? "";
+      if (!raw.startsWith("server:")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      item.classList.remove("drop-before", "drop-after");
+      const draggedId = raw.slice("server:".length);
+      if (draggedId === server.id) return;
+      const r = item.getBoundingClientRect();
+      const before = e.clientY < r.top + r.height / 2;
+      const idx = this.servers.findIndex((s) => s.id === server.id);
+      const beforeId = before ? server.id : (this.servers[idx + 1]?.id ?? null);
+      this.handlers.onReorderServer(draggedId, beforeId, server.groupId ?? null);
     });
 
     const statusBtn = document.createElement("button");

@@ -3,6 +3,7 @@ interface InputDialogOptions {
   defaultValue?: string;
   placeholder?: string;
   okLabel?: string;
+  type?: "text" | "password";
 }
 
 export function showInputDialog(opts: InputDialogOptions): Promise<string | null> {
@@ -28,6 +29,7 @@ export function showInputDialog(opts: InputDialogOptions): Promise<string | null
 
     h2.textContent = opts.title;
     okBtn.textContent = opts.okLabel ?? "OK";
+    input.type = opts.type ?? "text";
     input.value = opts.defaultValue ?? "";
     input.placeholder = opts.placeholder ?? "";
 

@@ -9,6 +9,7 @@ export type SessionStatus = "disconnected" | "connecting" | "connected" | "error
 
 export interface StatusDetail {
   reason?: string;
+  kind?: "auth" | "other";
 }
 
 export interface DesktopInfo {
@@ -357,14 +358,14 @@ export class SessionManager {
       const reason = rawReason || `Authentication failed (status ${status ?? "?"})`;
       session.status = "error";
       session.error = reason;
-      this.emitStatus(server.id, "error", { reason });
+      this.emitStatus(server.id, "error", { reason, kind: "auth" });
     });
 
     rfb.addEventListener("credentialsrequired", () => {
       console.warn("[cool-vnc] credentials required", server.name);
       const reason = server.password
         ? "Server rejected the saved password."
-        : "Server requires a password — edit this server to add one.";
+        : "Server requires a password.";
       session.status = "error";
       session.error = reason;
       try {
@@ -372,7 +373,7 @@ export class SessionManager {
       } catch {
         // ignore
       }
-      this.emitStatus(server.id, "error", { reason });
+      this.emitStatus(server.id, "error", { reason, kind: "auth" });
     });
 
     return session;

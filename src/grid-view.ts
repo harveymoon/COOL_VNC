@@ -10,6 +10,7 @@ const CAPTURE_OVERALL_TIMEOUT_MS = 10_000;
 export interface GridHandlers {
   onSelect: (server: SavedServer) => void;
   onClose: () => void;
+  isActive?: (serverId: string) => boolean;
 }
 
 type CardState = "idle" | "refreshing" | "offline" | "failed" | "ok";
@@ -182,6 +183,7 @@ export function showGridView(
 function createCard(server: SavedServer, handlers: GridHandlers, parent: HTMLElement): Card {
   const el = document.createElement("div");
   el.className = "grid-card";
+  if (handlers.isActive?.(server.id)) el.classList.add("is-active");
 
   const thumb = document.createElement("div");
   thumb.className = "grid-thumb";

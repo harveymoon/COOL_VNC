@@ -11,7 +11,30 @@ if (!gotLock) {
   process.exit(0);
 }
 
+// Register as the OS handler for vnc:// URLs. The packaged path is automatic;
+// in dev (electron .) we need to tell Windows how to relaunch us.
+if (process.defaultApp && process.argv.length >= 2) {
+  app.setAsDefaultProtocolClient("vnc", process.execPath, [path.resolve(process.argv[1])]);
+} else {
+  app.setAsDefaultProtocolClient("vnc");
+}
+
 let mainWindow = null;
+let pendingVncUrl = null;
+
+function extractVncUrl(args) {
+  if (!Array.isArray(args)) return null;
+  return args.find((a) => typeof a === "string" && /^vnc:\/\//i.test(a)) || null;
+}
+
+function deliverVncUrl(url) {
+  if (!url) return;
+  if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.send("vnc-url", url);
+  } else {
+    pendingVncUrl = url;
+  }
+}
 
 // Choose a writable data dir for the proxy. In dev, project-local; in prod,
 // the user's appdata so we never try to write inside the asar archive.
@@ -49,11 +72,18 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.cjs"),
     },
   });
 
   const startUrl = isDev ? "http://localhost:5174" : "http://localhost:6080";
   mainWindow.loadURL(startUrl);
+
+  mainWindow.webContents.once("did-finish-load", () => {
+    const initial = pendingVncUrl || extractVncUrl(process.argv);
+    pendingVncUrl = null;
+    if (initial) mainWindow.webContents.send("vnc-url", initial);
+  });
 
   // Open external links in the system browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -66,11 +96,20 @@ function createWindow() {
   });
 }
 
-app.on("second-instance", () => {
+app.on("second-instance", (_event, argv) => {
+  const url = extractVncUrl(argv);
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+  if (url) deliverVncUrl(url);
+});
+
+// macOS protocol handler entry point.
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  if (mainWindow) mainWindow.focus();
+  deliverVncUrl(url);
 });
 
 app.whenReady().then(async () => {

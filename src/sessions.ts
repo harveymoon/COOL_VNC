@@ -193,6 +193,21 @@ export class SessionManager {
     return this.compression;
   }
 
+  // Push local clipboard text to the remote machine. The remote will use this
+  // as the source for any paste action that follows (e.g. when the user's
+  // Ctrl+V keystroke reaches the remote).
+  sendClipboard(id: string, text: string): boolean {
+    const session = this.sessions.get(id);
+    if (!session || session.status !== "connected" || !session.rfb) return false;
+    try {
+      session.rfb.clipboardPasteFrom(text);
+      return true;
+    } catch (err) {
+      console.warn("[cool-vnc] clipboardPasteFrom failed", err);
+      return false;
+    }
+  }
+
   unfocus(): void {
     for (const s of this.sessions.values()) s.container.classList.remove("active");
     this.activeId = null;
@@ -359,6 +374,16 @@ export class SessionManager {
       session.status = "error";
       session.error = reason;
       this.emitStatus(server.id, "error", { reason, kind: "auth" });
+    });
+
+    // Remote → local clipboard. Whenever the remote machine copies, push the
+    // text into our local clipboard so the user can paste it elsewhere.
+    rfb.addEventListener("clipboard", (e: any) => {
+      const text = e?.detail?.text;
+      if (typeof text !== "string" || text.length === 0) return;
+      navigator.clipboard.writeText(text).catch((err) => {
+        console.warn("[cool-vnc] clipboard.writeText failed", err);
+      });
     });
 
     rfb.addEventListener("credentialsrequired", () => {

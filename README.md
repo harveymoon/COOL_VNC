@@ -2,7 +2,7 @@
 
 A hackable, dark-themed VNC client for the browser, packaged as a single-file desktop app.
 
-Built on [noVNC](https://github.com/novnc/noVNC). Adds a sidebar of saved servers, drag-drop groups, manual reorder, network scan with auto-auth + in-modal password retry, a settings overlay with quality and screen-region picking, periodic thumbnails, a full-screen grid view that highlights active sessions, automatic password prompting on auth failure, a `vnc://` URL handler for OS-level deep links, a small remote-control HTTP API, and an Electron shell so you can ship it as a `.exe` or `.app`.
+Built on [noVNC](https://github.com/novnc/noVNC). Adds a sidebar of saved servers, drag-drop groups, manual reorder, network scan with auto-auth + in-modal password retry, a settings overlay with quality and screen-region picking, periodic thumbnails, a full-screen grid view that highlights active sessions, automatic password prompting on auth failure, two-way clipboard sync, a `vnc://` URL handler for OS-level deep links, a small remote-control HTTP API, and an Electron shell so you can ship it as a `.exe` or `.app`.
 
 ---
 
@@ -40,6 +40,7 @@ Your saved servers, groups, and thumbnails live in `%APPDATA%\cool-vnc\data\` (W
 - **Auth-failure recovery**: if a connection is rejected for a wrong/missing password, an in-app prompt appears. Enter a new password; if the next attempt succeeds, the password is persisted to disk automatically (saved only after a confirmed-good connection — never on failure)
 - Gear (top-right) opens a settings panel: remote desktop name + resolution, quality slider (0-9), compression slider (0-9), and a stats overlay toggle that shows live `↓` / `↑` bytes-per-second and paint rate
 - Screen-region picker: drag a rectangle over the live canvas, then drag its edges/corners to adjust before saving; save per-server, switch between regions from a dropdown. Snaps to canvas edges within 10%.
+- **Clipboard sync**: when a session is connected, Ctrl/Cmd+V pushes your local clipboard text to the remote via RFB ClientCutText (the same Ctrl+V keystroke also reaches the remote, so the paste lands in whatever app has focus there). Copy on the remote → the text flows back into your local clipboard automatically. Text only — files and rich content aren't transferred.
 
 **Network scan**
 - "Scan" button TCP-probes the local /24 subnets on port 5900 in parallel

@@ -730,6 +730,30 @@ void (async () => {
   header.appendChild(pill);
 })();
 
+// ── Clipboard sync ─────────────────────────────────────────────────────────
+// On Ctrl/Cmd+V while a session is connected, push the local clipboard text
+// into the remote via RFB ClientCutText. We don't preventDefault, so the same
+// keystroke still reaches noVNC and gets forwarded to the remote — the remote
+// then pastes from its local clipboard, which is now ours. Remote → local
+// sync is handled by the rfb "clipboard" listener in SessionManager.
+document.addEventListener(
+  "keydown",
+  async (e) => {
+    const isPaste = (e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V");
+    if (!isPaste) return;
+    const server = selectedServer();
+    if (!server) return;
+    if (sessions.getStatus(server.id) !== "connected") return;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) sessions.sendClipboard(server.id, text);
+    } catch (err) {
+      console.warn("[cool-vnc] clipboard.readText failed", err);
+    }
+  },
+  true,
+);
+
 window.coolVnc?.onVncUrl(async (raw) => {
   let parsed: URL;
   try {

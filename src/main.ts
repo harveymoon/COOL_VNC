@@ -754,6 +754,54 @@ document.addEventListener(
   true,
 );
 
+// ── Mac: Option key → Windows / Super_L ────────────────────────────────────
+// noVNC's default keymap turns Mac Cmd into Alt on the remote and drops
+// Option entirely. Since Option is otherwise dead, we repurpose it as the
+// Super (Windows) key: hold Option+R for Win+R, Option+E for Win+E, or tap
+// Option alone to open the Start menu.
+if (/Mac/i.test(navigator.platform)) {
+  const SUPER_L = 0xffeb;
+  let supersDown = false;
+
+  const releaseSuper = () => {
+    if (!supersDown) return;
+    supersDown = false;
+    const server = selectedServer();
+    if (!server) return;
+    sessions.sendKey(server.id, SUPER_L, "MetaLeft", false);
+  };
+
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.code !== "AltLeft" && e.code !== "AltRight") return;
+      const server = selectedServer();
+      if (!server || sessions.getStatus(server.id) !== "connected") return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat || supersDown) return;
+      supersDown = true;
+      sessions.sendKey(server.id, SUPER_L, "MetaLeft", true);
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "keyup",
+    (e) => {
+      if (e.code !== "AltLeft" && e.code !== "AltRight") return;
+      e.preventDefault();
+      e.stopPropagation();
+      releaseSuper();
+    },
+    true,
+  );
+
+  // If focus leaves while Option is held (e.g. Cmd+Tab away), make sure the
+  // remote doesn't think Super is still down.
+  window.addEventListener("blur", releaseSuper);
+}
+
 window.coolVnc?.onVncUrl(async (raw) => {
   let parsed: URL;
   try {

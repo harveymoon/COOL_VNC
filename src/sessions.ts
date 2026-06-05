@@ -208,6 +208,21 @@ export class SessionManager {
     }
   }
 
+  // Inject a raw X11 keysym into the remote (down=true for press, false for
+  // release). Used for keys the browser/OS won't pass through normally —
+  // e.g. Mac's Option key, which we repurpose as Super_L (Windows key).
+  sendKey(id: string, keysym: number, code: string, down: boolean): boolean {
+    const session = this.sessions.get(id);
+    if (!session || session.status !== "connected" || !session.rfb) return false;
+    try {
+      session.rfb.sendKey(keysym, code, down);
+      return true;
+    } catch (err) {
+      console.warn("[cool-vnc] sendKey failed", err);
+      return false;
+    }
+  }
+
   unfocus(): void {
     for (const s of this.sessions.values()) s.container.classList.remove("active");
     this.activeId = null;

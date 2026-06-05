@@ -41,6 +41,7 @@ Your saved servers, groups, and thumbnails live in `%APPDATA%\cool-vnc\data\` (W
 - Gear (top-right) opens a settings panel: remote desktop name + resolution, quality slider (0-9), compression slider (0-9), and a stats overlay toggle that shows live `↓` / `↑` bytes-per-second and paint rate
 - Screen-region picker: drag a rectangle over the live canvas, then drag its edges/corners to adjust before saving; save per-server, switch between regions from a dropdown. Snaps to canvas edges within 10%.
 - **Clipboard sync**: when a session is connected, Ctrl/Cmd+V pushes your local clipboard text to the remote via RFB ClientCutText (the same Ctrl+V keystroke also reaches the remote, so the paste lands in whatever app has focus there). Copy on the remote → the text flows back into your local clipboard automatically. Text only — files and rich content aren't transferred.
+- **Mac → Windows key**: noVNC drops the Option key on Mac, so cool-vnc repurposes it as the Windows / Super key. Tap Option to open the Start menu, or hold Option+R / Option+E / Option+D for Win+R, Win+E, Win+D, etc. (Cmd still maps to Alt, Control to Control.)
 
 **Network scan**
 - "Scan" button TCP-probes the local /24 subnets on port 5900 in parallel
